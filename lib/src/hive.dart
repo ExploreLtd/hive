@@ -1,133 +1,90 @@
 part of hive;
 
-/// Open boxes and register adapters.
-class Hive {
-  static var _typeRegistry = _TypeRegistry();
-  static final _openBoxes = <String, Box<dynamic>>{};
+/// The main API interface of Hive. Available through the `Hive` constant.
+abstract class HiveInterface implements TypeRegistry {
+  /// Initialize Hive by giving it a home directory.
+  ///
+  /// (Not necessary in the browser)
+  void init(
+    String? path, {
+    HiveStorageBackendPreference backendPreference =
+        HiveStorageBackendPreference.native,
+  });
 
-  /// The default name if you don't specify a name for a box.
-  static const defaultName = 'hive';
+  /// Opens a box.
+  ///
+  /// If the box is already open, the instance is returned and all provided
+  /// parameters are being ignored.
+  Future<Box<E>> openBox<E>(
+    String name, {
+    HiveCipher? encryptionCipher,
+    KeyComparator keyComparator = defaultKeyComparator,
+    CompactionStrategy compactionStrategy = defaultCompactionStrategy,
+    bool crashRecovery = true,
+    String? path,
+    Uint8List? bytes,
+    String? collection,
+    @Deprecated('Use encryptionCipher instead') List<int>? encryptionKey,
+  });
 
-  /// The default directory for all boxes.
-  static String? defaultDirectory;
+  /// Opens a lazy box.
+  ///
+  /// If the box is already open, the instance is returned and all provided
+  /// parameters are being ignored.
+  Future<LazyBox<E>> openLazyBox<E>(
+    String name, {
+    HiveCipher? encryptionCipher,
+    KeyComparator keyComparator = defaultKeyComparator,
+    CompactionStrategy compactionStrategy = defaultCompactionStrategy,
+    bool crashRecovery = true,
+    String? path,
+    String? collection,
+    @Deprecated('Use encryptionCipher instead') List<int>? encryptionKey,
+  });
 
-  /// Registers a type adapter to allow Hive to (de)serialize your objects.
-  ///
-  /// Example:
-  /// ```dart
-  /// class Person {
-  ///   String name;
-  ///   int age;
-  ///
-  ///   factory Person.fromJson(Map<String, dynamic> json) {
-  ///     return Person()
-  ///       ..name = json['name'] as String
-  ///       ..age = json['age'] as int;
-  ///     }
-  ///
-  ///   Map<String, dynamic> toJson() {
-  ///     return {
-  ///       'name': name,
-  ///       'age': age,
-  ///     };
-  ///   }
-  /// }
-  ///
-  /// Hive.registerAdapter('Person', Person.fromJson);
-  /// ```
-  static void registerAdapter<T>(
-    String typeName,
-    T? Function(dynamic json) fromJson,
-  ) {
-    _typeRegistry.register<T>(Isar.fastHash(typeName), fromJson);
-  }
+  /// Returns a previously opened box.
+  Box<E> box<E>(String name);
 
-  /// Get or open the box with [name] in the given [directory]. If no directory
-  /// is specified, the default directory is used.
-  ///
-  /// If the box is already open, the same instance is returned.
-  ///
-  /// The [encryptionKey] is used to encrypt the box. If the box was already
-  /// opened with a different encryption key, an error is thrown.
-  ///
-  /// The [maxSizeMiB] is the maximum size of the box in MiB. If the box grows
-  /// bigger than this, an exception is thrown. It is recommended to set this
-  /// value to a small value if possible.
-  static Box<E> box<E>({
-    String name = defaultName,
-    String? directory,
-    String? encryptionKey,
-    int maxSizeMiB = 5,
-  }) {
-    final box = _openBoxes[name];
-    if (box != null) {
-      if (box is Box<E>) {
-        return box;
-      } else {
-        throw ArgumentError('Box was already opened with a different type. '
-            'Expected Box<${box.runtimeType}> but got Box<$E>.');
-      }
-    }
+  /// Returns a previously opened lazy box.
+  LazyBox<E> lazyBox<E>(String name);
 
-    final dir = directory ?? defaultDirectory;
-    if (dir == null) {
-      throw ArgumentError(
-        'No directory specified and no default directory set.',
-        'directory',
-      );
-    }
-
-    final isar = Isar.open(
-      name: name,
-      schemas: [FrameSchema],
-      directory: dir,
-      engine: encryptionKey != null ? IsarEngine.sqlite : IsarEngine.isar,
-      maxSizeMiB: maxSizeMiB,
-      encryptionKey: encryptionKey,
-      inspector: false,
-    );
-    final newBox = _BoxImpl<E>(isar);
-    _openBoxes[name] = newBox;
-    return newBox;
-  }
-
-  /// Runs [computation] in a new isolate and returns the result. Also takes
-  /// care of initializing Hive and closing all boxes afterwards.
-  ///
-  /// The optional [debugName] can be used to identify the isolate in debuggers.
-  static Future<T> compute<T>(
-    FutureOr<T> Function() computation, {
-    String? debugName,
-  }) {
-    final registry = _typeRegistry;
-    final dir = defaultDirectory;
-    return Isolate.run(
-      () async {
-        Hive._typeRegistry = registry;
-        Hive.defaultDirectory = dir;
-        try {
-          return await computation();
-        } finally {
-          Hive.closeAllBoxes();
-        }
-      },
-      debugName: debugName ?? 'Hive Isolate',
-    );
-  }
+  /// Checks if a specific box is currently open.
+  bool isBoxOpen(String name);
 
   /// Closes all open boxes.
-  static void closeAllBoxes() {
-    for (final box in _openBoxes.values) {
-      box.close();
-    }
-  }
+  Future<void> close();
 
-  /// Closes all open boxes and delete their data.
+  /// Removes the file which contains the box and closes the box.
   ///
-  /// If a box is still open in another isolate, it will not be deleted.
-  static void deleteAllBoxesFromDisk() {
-    for (final box in _openBoxes.values) {
-      box.deleteFromDisk();
-    }
-  }
+  /// In the browser, the IndexedDB database is being removed.
+  Future<void> deleteBoxFromDisk(String name, {String? path});
+
+  /// Deletes all currently open boxes from disk.
+  ///
+  /// The home directory will not be deleted.
+  Future<void> deleteFromDisk();
+
+  /// Generates a secure encryption key using the fortuna random algorithm.
+  List<int> generateSecureKey();
+
+  /// Checks if a box exists
+  Future<bool> boxExists(String name, {String? path});
+
+  /// Clears all registered adapters.
+  ///
+  /// To register an adapter use [registerAdapter].
+  ///
+  /// NOTE: [resetAdapters] also clears the default adapters registered
+  /// by Hive.
+  ///
+  /// WARNING: This method is only intended to be used for integration and unit tests
+  /// and SHOULD not be used in production code.
+  @visibleForTesting
+  void resetAdapters();
 }
+
+///
+typedef KeyComparator = int Function(dynamic key1, dynamic key2);
+
+/// A function which decides when to compact a box.
+typedef CompactionStrategy = bool Function(int entries, int deletedEntries);
