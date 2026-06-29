@@ -8,13 +8,14 @@ environment:
   sdk: ">=3.8.0 <4.0.0"
 
 dependencies:
-  meta: ^1.16.0
-  crypto: ^3.0.6
+  crypto: ^3.0.7
+  meta: ^1.18.0
 
 dev_dependencies:
-  test: ^1.26.3
-  mocktail: ^1.0.4
-  lints: ^6.0.0
+  build_runner: ^2.15.0
+  lints: ^6.1.0
+  mocktail: ^1.0.5
   path: ^1.9.1
   pointycastle: 4.0.0
-  build_runner: any
+  test: ^1.31.1
+  very_good_analysis: ^10.3.0
